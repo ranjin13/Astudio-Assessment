@@ -8,34 +8,55 @@ use Illuminate\Support\Str;
 
 abstract class QueryFilter
 {
+    /**
+     * @var Request
+     */
     protected Request $request;
-    protected Builder $builder;
-    protected array $operators = ['=', '>', '<', 'LIKE'];
 
+    /**
+     * @var Builder
+     */
+    protected Builder $builder;
+
+    /**
+     * @var array
+     */
+    protected array $operators = ['=', '>', '<', 'LIKE', 'ILIKE'];
+
+    /**
+     * Constructor
+     *
+     * @param Request $request
+     */
     public function __construct(Request $request)
     {
         $this->request = $request;
     }
 
-    public function apply(Builder $builder): Builder
-    {
-        $this->builder = $builder;
+    /**
+     * Apply filters to the query builder
+     *
+     * @param Builder $builder
+     * @return Builder
+     */
+    abstract public function apply(Builder $builder): Builder;
 
-        foreach ($this->filters() as $field => $value) {
-            $method = Str::camel($field);
-            if (method_exists($this, $method)) {
-                call_user_func_array([$this, $method], [$value]);
-            }
-        }
-
-        return $this->builder;
-    }
-
+    /**
+     * Get all filters from the request
+     *
+     * @return array
+     */
     protected function filters(): array
     {
         return $this->request->get('filters', []);
     }
 
+    /**
+     * Parse operator and value from filter string
+     *
+     * @param string $value
+     * @return array
+     */
     protected function parseOperator(string $value): array
     {
         $operator = '=';

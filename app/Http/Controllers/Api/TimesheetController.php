@@ -2,11 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Filters\TimesheetFilter;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\TimesheetRequest;
+use App\Http\Resources\TimesheetResource;
 use App\Models\Timesheet;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class TimesheetController extends Controller
 {
@@ -14,70 +21,158 @@ class TimesheetController extends Controller
 
     /**
      * Display a listing of the resource.
+     *
+     * @param Request $request
+     * @param TimesheetFilter $filter
+     * @return AnonymousResourceCollection
      */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, TimesheetFilter $filter): AnonymousResourceCollection
     {
-        $timesheets = $request->user()->timesheets()
-            ->with(['project'])
-            ->latest()
-            ->get();
+        try {
+            Log::info('Timesheet filter request', [
+                'filters' => $request->get('filters', [])
+            ]);
 
-        return response()->json($timesheets);
+            $timesheets = Timesheet::query()
+                ->filter($filter)
+                ->latest()
+                ->get();
+
+            Log::info('Filtered timesheets', [
+                'count' => $timesheets->count()
+            ]);
+
+            return TimesheetResource::collection($timesheets);
+        } catch (Throwable $e) {
+            Log::error('Error fetching timesheets', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Store a newly created resource in storage.
+     *
+     * @param TimesheetRequest $request
+     * @return JsonResponse
      */
-    public function store(Request $request): JsonResponse
+    public function store(TimesheetRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'task_name' => 'required|string|max:255',
-            'date' => 'required|date',
-            'hours' => 'required|numeric|min:0|max:24',
-            'project_id' => 'required|exists:projects,id',
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $timesheet = $request->user()->timesheets()->create($validated);
+            $timesheet = Timesheet::create($request->validated());
 
-        return response()->json($timesheet->load('project'), 201);
+            DB::commit();
+
+            return response()->json(
+                new TimesheetResource($timesheet),
+                201
+            );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error creating timesheet', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $request->validated()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Display the specified resource.
+     *
+     * @param Timesheet $timesheet
+     * @return JsonResponse
      */
     public function show(Timesheet $timesheet): JsonResponse
     {
-        $this->authorize('view', $timesheet);
-        return response()->json($timesheet->load('project'));
+        try {
+            $this->authorize('view', $timesheet);
+
+            return response()->json(
+                new TimesheetResource($timesheet)
+            );
+        } catch (Throwable $e) {
+            Log::error('Error fetching timesheet', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'timesheet_id' => $timesheet->id
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Update the specified resource in storage.
+     *
+     * @param TimesheetRequest $request
+     * @param Timesheet $timesheet
+     * @return JsonResponse
      */
-    public function update(Request $request, Timesheet $timesheet): JsonResponse
+    public function update(TimesheetRequest $request, Timesheet $timesheet): JsonResponse
     {
-        $this->authorize('update', $timesheet);
+        try {
+            $this->authorize('update', $timesheet);
 
-        $validated = $request->validate([
-            'task_name' => 'required|string|max:255',
-            'date' => 'required|date',
-            'hours' => 'required|numeric|min:0|max:24',
-            'project_id' => 'required|exists:projects,id',
-        ]);
+            DB::beginTransaction();
 
-        $timesheet->update($validated);
+            $timesheet->update($request->validated());
 
-        return response()->json($timesheet->load('project'));
+            DB::commit();
+
+            return response()->json(
+                new TimesheetResource($timesheet)
+            );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error updating timesheet', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'timesheet_id' => $timesheet->id,
+                'data' => $request->validated()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Remove the specified resource from storage.
+     *
+     * @param Timesheet $timesheet
+     * @return JsonResponse
      */
     public function destroy(Timesheet $timesheet): JsonResponse
     {
-        $this->authorize('delete', $timesheet);
-        
-        $timesheet->delete();
-        return response()->json(null, 204);
+        try {
+            $this->authorize('delete', $timesheet);
+
+            DB::beginTransaction();
+
+            $timesheet->delete();
+
+            DB::commit();
+
+            return response()->json(null, 204);
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error deleting timesheet', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'timesheet_id' => $timesheet->id
+            ]);
+
+            throw $e;
+        }
     }
 }

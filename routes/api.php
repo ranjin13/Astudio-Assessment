@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AttributeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\TimesheetController;
+use App\Http\Controllers\Api\UserController;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
@@ -17,12 +18,8 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     
-    // User routes
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    });
-
     // Resource routes
+    Route::apiResource('users', UserController::class);
     Route::apiResource('attributes', AttributeController::class);
     Route::apiResource('projects', ProjectController::class);
     Route::apiResource('timesheets', TimesheetController::class);

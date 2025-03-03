@@ -25,6 +25,11 @@ class AttributeSeeder extends Seeder
                 'options' => null,
             ],
             [
+                'name' => 'End Date',
+                'type' => 'date',
+                'options' => null,
+            ],
+            [
                 'name' => 'Employee ID',
                 'type' => 'text',
                 'options' => null,

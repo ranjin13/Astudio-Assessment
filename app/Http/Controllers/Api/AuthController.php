@@ -3,35 +3,74 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Resources\Auth\RegisterResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Laravel\Passport\Client;
+use Throwable;
 
 class AuthController extends Controller
 {
-    public function register(Request $request): JsonResponse
+    /**
+     * Register a new user.
+     *
+     * @param RegisterRequest $request
+     * @return JsonResponse
+     */
+    public function register(RegisterRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => ['required', 'confirmed', Password::defaults()],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $user = User::create([
-            'first_name' => $validated['first_name'],
-            'last_name' => $validated['last_name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-        ]);
+            // Create the user
+            $user = User::create([
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+            ]);
 
-        return response()->json([
-            'message' => 'User registered successfully',
-            'user' => $user,
-        ], 201);
+            // Create a personal access token
+            $personalAccessClient = Client::where('personal_access_client', true)->first();
+            
+            if (!$personalAccessClient) {
+                throw new \RuntimeException('Personal access client not found. Please run: php artisan passport:install');
+            }
+
+            $token = $user->createToken('Personal Access Token')->accessToken;
+            $user->token = $token;
+
+            DB::commit();
+
+            Log::info('User updated successfully', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name
+            ]);
+
+            return response()->json(
+                new RegisterResource($user),
+                201
+            );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Registration failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $request->safe()->except(['password'])
+            ]);
+
+            throw $e;
+        }
     }
 
     public function login(Request $request): JsonResponse

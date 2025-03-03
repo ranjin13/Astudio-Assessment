@@ -4,119 +4,288 @@ namespace App\Http\Controllers\Api;
 
 use App\Filters\ProjectFilter;
 use App\Http\Controllers\Controller;
-use App\Models\Attribute;
+use App\Http\Requests\ProjectRequest;
+use App\Http\Resources\ProjectResource;
 use App\Models\Project;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
+use Illuminate\Support\Facades\Auth;
 
 class ProjectController extends Controller
 {
-    use AuthorizesRequests;
-
     /**
      * Display a listing of the resource.
+     *
+     * @param Request $request
+     * @param ProjectFilter $filter
+     * @return AnonymousResourceCollection
      */
-    public function index(Request $request, ProjectFilter $filter): JsonResponse
+    public function index(Request $request, ProjectFilter $filter): AnonymousResourceCollection
     {
-        $query = Project::query();
-        
-        // Apply filters
-        $projects = $query->filter($filter)
-            ->with(['attributeValues.attribute'])
-            ->get();
+        try {
+            Log::info('Project filter request', [
+                'filters' => $request->get('filters', [])
+            ]);
 
-        // Debug
-        Log::info('Projects query result', [
-            'count' => $projects->count(),
-            'filters' => $request->get('filters', [])
-        ]);
+            $projects = Project::query()
+                ->filter($filter)
+                ->with('attributeValues.attribute')
+                ->latest()
+                ->get();
 
-        return response()->json($projects);
+            Log::info('Filtered projects', [
+                'count' => $projects->count()
+            ]);
+
+            return ProjectResource::collection($projects);
+        } catch (Throwable $e) {
+            Log::error('Error fetching projects', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Store a newly created resource in storage.
+     *
+     * @param ProjectRequest $request
+     * @return JsonResponse
      */
-    public function store(Request $request): JsonResponse
+    public function store(ProjectRequest $request): JsonResponse
     {
-        $this->authorize('create', Project::class);
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'status' => 'required|string|in:active,inactive,completed',
-        ]);
+            $project = Project::create($request->safe()->except('attributes'));
 
-        $project = Project::create($validated);
-        $project->users()->attach($request->user()->id);
+            // Automatically assign the creating user to the project
+            $project->users()->attach(Auth::id());
 
-        // Handle dynamic attributes
-        $attributes = Attribute::all();
-        foreach ($attributes as $attribute) {
-            if ($request->has($attribute->name)) {
-                $project->attributeValues()->create([
-                    'attribute_id' => $attribute->id,
-                    'value' => $request->input($attribute->name),
+            Log::info('Project created:', [
+                'project_id' => $project->id,
+                'assigned_user_id' => Auth::id()
+            ]);
+
+            if ($request->has('attributes')) {
+                $attributes = $request->json('attributes', []);
+                
+                Log::info('Processing attributes:', [
+                    'attributes' => $attributes,
+                    'count' => count($attributes)
                 ]);
-            }
-        }
 
-        return response()->json($project->load('attributeValues.attribute'), 201);
+                if (!empty($attributes)) {
+                    foreach ($attributes as $attribute) {
+                        $data = [
+                            'attribute_id' => $attribute['attribute_id'],
+                            'entity_type' => Project::class,
+                            'entity_id' => $project->id,
+                            'value' => $attribute['value']
+                        ];
+
+                        Log::info('Creating attribute value:', [
+                            'attribute_data' => $data
+                        ]);
+
+                        $attributeValue = \App\Models\AttributeValue::create($data);
+
+                        Log::info('Attribute value created:', [
+                            'attribute_value_id' => $attributeValue->id ?? null,
+                            'attribute_value' => $attributeValue->toArray()
+                        ]);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            Log::info('Project created successfully with ID: ' . $project->id);
+
+            // Fresh load to ensure we get the latest data
+            $loadedProject = $project->fresh(['attributeValues.attribute', 'users']);
+            
+            Log::info('Loaded project data:', [
+                'attribute_values_count' => $loadedProject->attributeValues->count(),
+                'attribute_values' => $loadedProject->attributeValues->toArray(),
+                'users' => $loadedProject->users->pluck('id')->toArray()
+            ]);
+
+            return response()->json(
+                new ProjectResource($loadedProject),
+                201
+            );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error creating project', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all(),
+                'validated_data' => $request->validated()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Display the specified resource.
+     *
+     * @param Project $project
+     * @return JsonResponse
      */
     public function show(Project $project): JsonResponse
     {
-        $this->authorize('view', $project);
-        return response()->json($project->load('attributeValues.attribute'));
+        try {
+            return response()->json(
+                new ProjectResource($project->load('attributeValues.attribute'))
+            );
+        } catch (Throwable $e) {
+            Log::error('Error fetching project', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'project_id' => $project->id
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Update the specified resource in storage.
+     *
+     * @param ProjectRequest $request
+     * @param Project $project
+     * @return JsonResponse
      */
-    public function update(Request $request, Project $project): JsonResponse
+    public function update(ProjectRequest $request, Project $project): JsonResponse
     {
-        $this->authorize('update', $project);
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'name' => 'sometimes|required|string|max:255',
-            'description' => 'nullable|string',
-            'status' => 'sometimes|required|string|in:active,inactive,completed',
-        ]);
+            Log::info('Updating project with data:', [
+                'project_id' => $project->id,
+                'project_data' => $request->safe()->except('attributes'),
+                'has_attributes' => $request->has('attributes'),
+                'attributes' => $request->input('attributes')
+            ]);
 
-        $project->update($validated);
+            $project->update($request->safe()->except('attributes'));
 
-        // Handle dynamic attributes
-        $attributes = Attribute::all();
-        foreach ($attributes as $attribute) {
-            if ($request->has($attribute->name)) {
-                $project->attributeValues()->updateOrCreate(
-                    [
-                        'attribute_id' => $attribute->id,
-                    ],
-                    [
-                        'value' => $request->input($attribute->name),
-                    ]
-                );
+            if ($request->has('attributes')) {
+                $attributes = $request->json('attributes', []);
+                
+                Log::info('Processing attributes for update:', [
+                    'attributes' => $attributes,
+                    'count' => count($attributes)
+                ]);
+
+                if (!empty($attributes)) {
+                    // Store new attribute values before deleting old ones
+                    $newAttributeValues = [];
+                    
+                    foreach ($attributes as $attribute) {
+                        $data = [
+                            'attribute_id' => $attribute['attribute_id'],
+                            'entity_type' => Project::class,
+                            'entity_id' => $project->id,
+                            'value' => $attribute['value']
+                        ];
+
+                        Log::info('Preparing attribute value:', [
+                            'attribute_data' => $data
+                        ]);
+
+                        $newAttributeValues[] = $data;
+                    }
+
+                    if (!empty($newAttributeValues)) {
+                        // Only delete old values if we have valid new ones to insert
+                        Log::info('Deleting existing attribute values for project:', [
+                            'project_id' => $project->id
+                        ]);
+                        
+                        $project->attributeValues()->delete();
+
+                        // Create new attribute values
+                        foreach ($newAttributeValues as $data) {
+                            $attributeValue = \App\Models\AttributeValue::create($data);
+
+                            Log::info('Attribute value created:', [
+                                'attribute_value_id' => $attributeValue->id ?? null,
+                                'attribute_value' => $attributeValue->toArray()
+                            ]);
+                        }
+                    }
+                }
             }
-        }
 
-        return response()->json($project->load('attributeValues.attribute'));
+            DB::commit();
+
+            Log::info('Project updated successfully with ID: ' . $project->id);
+
+            // Fresh load to ensure we get the latest data
+            $loadedProject = $project->fresh(['attributeValues.attribute']);
+            
+            Log::info('Loaded project data:', [
+                'attribute_values_count' => $loadedProject->attributeValues->count(),
+                'attribute_values' => $loadedProject->attributeValues->toArray()
+            ]);
+
+            return response()->json(
+                new ProjectResource($loadedProject)
+            );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error updating project', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'project_id' => $project->id,
+                'request_data' => $request->all(),
+                'validated_data' => $request->validated()
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Remove the specified resource from storage.
+     *
+     * @param Project $project
+     * @return JsonResponse
      */
     public function destroy(Project $project): JsonResponse
     {
-        $this->authorize('delete', $project);
-        
-        $project->delete();
-        return response()->json(null, 204);
+        try {
+            DB::beginTransaction();
+
+            $project->attributeValues()->delete();
+            $project->delete();
+
+            DB::commit();
+
+            Log::info('Project deleted successfully..');
+
+            return response()->json(null, 204);
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error deleting project', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'project_id' => $project->id
+            ]);
+
+            throw $e;
+        }
     }
 }
