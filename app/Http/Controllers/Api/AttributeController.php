@@ -21,32 +21,20 @@ class AttributeController extends Controller
      */
     public function index(Request $request, AttributeFilter $filter): JsonResponse
     {
+        Log::info('Attribute filter request', [
+            'filters' => $request->get('filters', [])
+        ]);
+
         try {
-            Log::info('Attribute filter request', [
-                'filters' => $request->get('filters', []),
-                'raw_request' => $request->all()
+            $attributes = Attribute::query()
+                ->filter($filter)
+                ->get();
+
+            Log::info('Filtered attributes', [
+                'count' => $attributes->count()
             ]);
 
-            $query = Attribute::query()->filter($filter);
-
-            // Log the SQL query before execution
-            Log::info('SQL Query', [
-                'query' => $query->toSql(),
-                'bindings' => $query->getBindings()
-            ]);
-
-            $perPage = $request->input('per_page', 10);
-            $attributes = $query->latest()->paginate($perPage);
-
-            // Log pagination info
-            Log::info('Attributes pagination', [
-                'total' => $attributes->total(),
-                'per_page' => $attributes->perPage(),
-                'current_page' => $attributes->currentPage(),
-                'last_page' => $attributes->lastPage()
-            ]);
-
-            return response()->json(AttributeResource::collection($attributes));
+            return response()->json($attributes);
         } catch (Throwable $e) {
             Log::error('Error fetching attributes', [
                 'error' => $e->getMessage(),
