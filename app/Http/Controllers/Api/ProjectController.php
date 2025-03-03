@@ -51,29 +51,15 @@ class ProjectController extends Controller
                 'bindings' => $query->getBindings()
             ]);
 
-            $projects = $query->latest()->get();
+            $perPage = $request->input('per_page', 10);
+            $projects = $query->latest()->paginate($perPage);
 
-            // Log the projects and their date attributes specifically
-            Log::info('Projects found', [
-                'count' => $projects->count(),
-                'projects' => $projects->map(function ($project) {
-                    $dates = $project->attributeValues->map(function ($av) {
-                        return [
-                            'name' => $av->attribute->name,
-                            'value' => $av->value,
-                            'attribute_id' => $av->attribute_id
-                        ];
-                    })->filter(function ($attr) {
-                        return in_array($attr['name'], ['Start Date', 'End Date']);
-                    });
-
-                    return [
-                        'id' => $project->id,
-                        'name' => $project->name,
-                        'status' => $project->status,
-                        'date_attributes' => $dates
-                    ];
-                })
+            // Log pagination info
+            Log::info('Projects pagination', [
+                'total' => $projects->total(),
+                'per_page' => $projects->perPage(),
+                'current_page' => $projects->currentPage(),
+                'last_page' => $projects->lastPage()
             ]);
 
             return ProjectResource::collection($projects);

@@ -30,16 +30,29 @@ class TimesheetController extends Controller
     {
         try {
             Log::info('Timesheet filter request', [
-                'filters' => $request->get('filters', [])
+                'filters' => $request->get('filters', []),
+                'raw_request' => $request->all()
             ]);
 
-            $timesheets = Timesheet::query()
+            $query = Timesheet::query()
                 ->filter($filter)
-                ->latest()
-                ->get();
+                ->with(['project', 'user']);
 
-            Log::info('Filtered timesheets', [
-                'count' => $timesheets->count()
+            // Log the SQL query before execution
+            Log::info('SQL Query', [
+                'query' => $query->toSql(),
+                'bindings' => $query->getBindings()
+            ]);
+
+            $perPage = $request->input('per_page', 10);
+            $timesheets = $query->latest()->paginate($perPage);
+
+            // Log pagination info
+            Log::info('Timesheets pagination', [
+                'total' => $timesheets->total(),
+                'per_page' => $timesheets->perPage(),
+                'current_page' => $timesheets->currentPage(),
+                'last_page' => $timesheets->lastPage()
             ]);
 
             return TimesheetResource::collection($timesheets);
