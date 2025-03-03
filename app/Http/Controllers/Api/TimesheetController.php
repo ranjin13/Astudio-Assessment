@@ -29,17 +29,28 @@ class TimesheetController extends Controller
     public function index(Request $request, TimesheetFilter $filter): AnonymousResourceCollection
     {
         try {
-            Log::info('Timesheet filter request', [
+            $query = Timesheet::query()
+                ->filter($filter)
+                ->with(['user', 'project'])
+                ->orderBy('date', 'desc')         // Primary sort by timesheet date
+                ->orderBy('created_at', 'desc')   // Secondary sort by creation date
+                ->orderBy('id', 'desc');          // Final sort for items created at the same time
+
+            // Log the SQL query before execution
+            Log::info('Timesheet filter query', [
+                'sql' => $query->toSql(),
+                'bindings' => $query->getBindings(),
                 'filters' => $request->get('filters', [])
             ]);
 
-            $timesheets = Timesheet::query()
-                ->filter($filter)
-                ->latest()
-                ->get();
+            $perPage = $request->input('per_page', 10); // Default 10 items per page
+            $timesheets = $query->paginate($perPage);
 
-            Log::info('Filtered timesheets', [
-                'count' => $timesheets->count()
+            Log::info('Timesheets pagination', [
+                'total' => $timesheets->total(),
+                'per_page' => $timesheets->perPage(),
+                'current_page' => $timesheets->currentPage(),
+                'last_page' => $timesheets->lastPage()
             ]);
 
             return TimesheetResource::collection($timesheets);

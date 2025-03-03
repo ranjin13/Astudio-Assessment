@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Helper\ApiResponse;
+use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
@@ -21,10 +22,22 @@ class UserController extends Controller
      *
      * @return AnonymousResourceCollection
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
         try {
-            $users = User::latest()->get();
+            $query = User::query()
+                ->orderBy('created_at', 'desc')  // Ensure consistent sorting
+                ->orderBy('id', 'desc');         // Secondary sort for items created at the same time
+
+            $perPage = $request->input('per_page', 10); // Default 10 items per page
+            $users = $query->paginate($perPage);
+
+            Log::info('Users pagination', [
+                'total' => $users->total(),
+                'per_page' => $users->perPage(),
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage()
+            ]);
 
             return UserResource::collection($users);
         } catch (Throwable $e) {
