@@ -16,12 +16,15 @@ class ProjectSeeder extends Seeder
     {
         $users = User::all();
 
-        // Create 3 projects
-        Project::factory(3)->create()->each(function ($project) use ($users) {
-            // Assign 2-3 random users to each project
-            $project->users()->attach(
-                $users->random(rand(2, 3))->pluck('id')->toArray()
-            );
-        });
+        // Create 3 projects with valid date ranges
+        Project::factory(3)
+            ->withDates() // Add date attributes with valid ranges
+            ->create()
+            ->each(function ($project) use ($users) {
+                // Assign 2-3 random users to each project
+                $project->users()->attach(
+                    $users->random(rand(2, 3))->pluck('id')->toArray()
+                );
+            });
     }
 }

@@ -157,6 +157,25 @@ class ProjectFilter extends QueryFilter
      */
     protected function addEavFilter(Attribute $attribute, string $operator, mixed $value): void
     {
+        // Special handling for date attributes
+        if ($attribute->type === 'date' && !empty($value)) {
+            try {
+                $value = Carbon::parse($value)->toDateString();
+                Log::info('Parsed date value for EAV filter', [
+                    'attribute' => $attribute->name,
+                    'original' => $value,
+                    'parsed' => $value
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Invalid date format for EAV filter', [
+                    'attribute' => $attribute->name,
+                    'value' => $value,
+                    'error' => $e->getMessage()
+                ]);
+                return;
+            }
+        }
+
         $this->eavFilters[] = [
             'attribute' => $attribute,
             'operator' => $operator,
@@ -185,12 +204,27 @@ class ProjectFilter extends QueryFilter
                         $subQuery->whereNull('value');
                     } else if ($filter['attribute']->type === 'select') {
                         $subQuery->whereRaw('LOWER(value) ' . $filter['operator'] . ' ?', [strtolower($filter['value'])]);
+                    } else if ($filter['attribute']->type === 'date') {
+                        // Special handling for date comparisons
+                        $subQuery->whereRaw("CAST(value AS DATE) {$filter['operator']} ?", [$filter['value']]);
+                        
+                        Log::info('Applied date filter', [
+                            'attribute' => $filter['attribute']->name,
+                            'operator' => $filter['operator'],
+                            'value' => $filter['value']
+                        ]);
                     } else {
                         $subQuery->where('value', $filter['operator'], $filter['value']);
                     }
                 });
             }
         });
+
+        Log::info('Applied EAV filters', [
+            'filters' => $this->eavFilters,
+            'sql' => $this->builder->toSql(),
+            'bindings' => $this->builder->getBindings()
+        ]);
     }
 
     /**

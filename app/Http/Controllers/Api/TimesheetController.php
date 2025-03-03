@@ -68,6 +68,8 @@ class TimesheetController extends Controller
 
             DB::commit();
 
+            Log::info('Timesheet created successfully with ID: ' . $timesheet->id);
+
             return response()->json(
                 new TimesheetResource($timesheet),
                 201
@@ -128,6 +130,8 @@ class TimesheetController extends Controller
 
             DB::commit();
 
+            Log::info('Timesheet updated successfully with ID: ' . $timesheet->id);
+
             return response()->json(
                 new TimesheetResource($timesheet)
             );
@@ -161,6 +165,8 @@ class TimesheetController extends Controller
             $timesheet->delete();
 
             DB::commit();
+
+            Log::info('Timesheet deleted successfully with ID: ' . $timesheet->id);
 
             return response()->json(null, 204);
         } catch (Throwable $e) {

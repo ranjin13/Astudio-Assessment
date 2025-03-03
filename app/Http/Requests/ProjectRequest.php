@@ -35,6 +35,11 @@ class ProjectRequest extends FormRequest
 
         // Add type-specific validation rules for attribute values
         if ($this->has('attributes')) {
+            $startDateValue = null;
+            $endDateValue = null;
+            $startDateIndex = null;
+            $endDateIndex = null;
+
             foreach ($this->input('attributes', []) as $index => $attribute) {
                 if (!isset($attribute['attribute_id'])) {
                     continue;
@@ -50,6 +55,15 @@ class ProjectRequest extends FormRequest
                 switch ($dbAttribute->type) {
                     case 'date':
                         $valueRules[] = 'date';
+                        
+                        // Store date values for comparison
+                        if ($dbAttribute->name === 'Start Date') {
+                            $startDateValue = $attribute['value'] ?? null;
+                            $startDateIndex = $index;
+                        } elseif ($dbAttribute->name === 'End Date') {
+                            $endDateValue = $attribute['value'] ?? null;
+                            $endDateIndex = $index;
+                        }
                         break;
                     case 'number':
                         $valueRules = ['required', 'numeric'];
@@ -61,9 +75,19 @@ class ProjectRequest extends FormRequest
 
                 $rules["attributes.{$index}.value"] = $valueRules;
             }
+
+            // Add date comparison validation if both dates are present
+            if ($startDateValue !== null && $endDateValue !== null) {
+                $rules["attributes.{$endDateIndex}.value"][] = "after:{$startDateValue}";
+            }
         }
 
         if ($this->isMethod('PUT') || $this->isMethod('PATCH')) {
+            // For updates, we need to check against existing dates if only one is being updated
+            if ($this->isUpdatingDates()) {
+                $this->addDateComparisonRules($rules);
+            }
+            
             $rules = collect($rules)->mapWithKeys(function ($value, $key) {
                 return [$key => array_merge(['sometimes'], $value)];
             })->toArray();
@@ -95,6 +119,76 @@ class ProjectRequest extends FormRequest
             'attributes.*.value.date' => 'The value must be a valid date.',
             'attributes.*.value.numeric' => 'The value must be a number.',
             'attributes.*.value.in' => 'The selected value is not a valid option.',
+            'attributes.*.value.after' => 'The end date must be after the start date.',
         ];
+    }
+
+    /**
+     * Check if we're updating date attributes
+     */
+    private function isUpdatingDates(): bool
+    {
+        $attributes = $this->input('attributes', []);
+        $dateAttributes = ['Start Date', 'End Date'];
+        
+        foreach ($attributes as $attribute) {
+            $dbAttribute = Attribute::find($attribute['attribute_id'] ?? null);
+            if ($dbAttribute && in_array($dbAttribute->name, $dateAttributes)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Add date comparison rules for updates
+     */
+    private function addDateComparisonRules(array &$rules): void
+    {
+        if (!$this->project) {
+            return;
+        }
+
+        $startDateAttr = Attribute::where('name', 'Start Date')->first();
+        $endDateAttr = Attribute::where('name', 'End Date')->first();
+        
+        if (!$startDateAttr || !$endDateAttr) {
+            return;
+        }
+
+        // Get existing date values
+        $existingStartDate = $this->project->attributeValues()
+            ->where('attribute_id', $startDateAttr->id)
+            ->value('value');
+            
+        $existingEndDate = $this->project->attributeValues()
+            ->where('attribute_id', $endDateAttr->id)
+            ->value('value');
+
+        // Find new date values in request
+        $newStartDate = null;
+        $newEndDate = null;
+        $endDateIndex = null;
+
+        foreach ($this->input('attributes', []) as $index => $attribute) {
+            $dbAttribute = Attribute::find($attribute['attribute_id'] ?? null);
+            if (!$dbAttribute) continue;
+
+            if ($dbAttribute->name === 'Start Date') {
+                $newStartDate = $attribute['value'];
+            } elseif ($dbAttribute->name === 'End Date') {
+                $newEndDate = $attribute['value'];
+                $endDateIndex = $index;
+            }
+        }
+
+        // Add validation rules based on what's being updated
+        if ($endDateIndex !== null) {
+            $compareToDate = $newStartDate ?? $existingStartDate;
+            if ($compareToDate) {
+                $rules["attributes.{$endDateIndex}.value"][] = "after:{$compareToDate}";
+            }
+        }
     }
 } 

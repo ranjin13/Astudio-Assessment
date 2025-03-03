@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 class FilterValidator
 {
     protected array $allowedOperators = ['=', '>', '<', 'LIKE', 'ILIKE'];
-    protected array $dateFields = ['created_at', 'updated_at', 'date'];
+    protected array $dateFields = ['start_date', 'end_date', 'date', 'created_at', 'updated_at'];
     protected array $textFields = ['name', 'description', 'status', 'task_name'];
     protected array $attributeFields = ['name', 'type'];
     protected array $timesheetFields = ['hours', 'task_name', 'date'];

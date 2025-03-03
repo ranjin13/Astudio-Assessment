@@ -28,17 +28,52 @@ class ProjectController extends Controller
     {
         try {
             Log::info('Project filter request', [
-                'filters' => $request->get('filters', [])
+                'filters' => $request->get('filters', []),
+                'raw_request' => $request->all()
             ]);
 
-            $projects = Project::query()
-                ->filter($filter)
-                ->with('attributeValues.attribute')
-                ->latest()
-                ->get();
+            // Get the attribute IDs for start_date and end_date
+            $startDateAttr = \App\Models\Attribute::where('name', 'Start Date')->first();
+            $endDateAttr = \App\Models\Attribute::where('name', 'End Date')->first();
+            
+            Log::info('Date attributes found:', [
+                'start_date_attr' => $startDateAttr ? $startDateAttr->toArray() : null,
+                'end_date_attr' => $endDateAttr ? $endDateAttr->toArray() : null
+            ]);
 
-            Log::info('Filtered projects', [
-                'count' => $projects->count()
+            $query = Project::query()
+                ->filter($filter)
+                ->with('attributeValues.attribute');
+
+            // Log the SQL query before execution
+            Log::info('SQL Query', [
+                'query' => $query->toSql(),
+                'bindings' => $query->getBindings()
+            ]);
+
+            $projects = $query->latest()->get();
+
+            // Log the projects and their date attributes specifically
+            Log::info('Projects found', [
+                'count' => $projects->count(),
+                'projects' => $projects->map(function ($project) {
+                    $dates = $project->attributeValues->map(function ($av) {
+                        return [
+                            'name' => $av->attribute->name,
+                            'value' => $av->value,
+                            'attribute_id' => $av->attribute_id
+                        ];
+                    })->filter(function ($attr) {
+                        return in_array($attr['name'], ['Start Date', 'End Date']);
+                    });
+
+                    return [
+                        'id' => $project->id,
+                        'name' => $project->name,
+                        'status' => $project->status,
+                        'date_attributes' => $dates
+                    ];
+                })
             ]);
 
             return ProjectResource::collection($projects);

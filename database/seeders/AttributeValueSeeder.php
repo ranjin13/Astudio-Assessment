@@ -34,8 +34,16 @@ class AttributeValueSeeder extends Seeder
 
         // Create attribute values for projects
         foreach ($projects as $project) {
+            // Generate start date first
+            $startDate = null;
             foreach ($attributes as $attribute) {
-                $value = $this->generateValueForAttribute($attribute);
+                $value = $this->generateValueForAttribute($attribute, $startDate);
+                
+                // Store start date to use for end date validation
+                if ($attribute->name === 'Start Date') {
+                    $startDate = $value;
+                }
+                
                 AttributeValue::create([
                     'attribute_id' => $attribute->id,
                     'entity_type' => Project::class,
@@ -46,15 +54,32 @@ class AttributeValueSeeder extends Seeder
         }
     }
 
-    private function generateValueForAttribute(Attribute $attribute): string
+    private function generateValueForAttribute(Attribute $attribute, ?string $startDate = null): string
     {
         return match ($attribute->type) {
             'text' => fake()->word(),
-            'date' => fake()->date(),
+            'date' => $this->generateDate($attribute->name, $startDate),
             'number' => (string) fake()->numberBetween(1000, 100000),
             'select' => $this->getRandomOption($attribute->options),
             default => fake()->word(),
         };
+    }
+
+    private function generateDate(string $attributeName, ?string $startDate = null): string
+    {
+        if ($attributeName === 'End Date' && $startDate) {
+            // Generate an end date that's between 1 month and 1 year after the start date
+            $start = \Carbon\Carbon::parse($startDate);
+            return fake()->dateTimeBetween($start->addMonth(), $start->copy()->addYear())->format('Y-m-d');
+        }
+        
+        if ($attributeName === 'Start Date') {
+            // Generate a start date between 6 months ago and 1 year in the future
+            return fake()->dateTimeBetween('-6 months', '+1 year')->format('Y-m-d');
+        }
+        
+        // For other date fields
+        return fake()->date();
     }
 
     private function getRandomOption($options): string
