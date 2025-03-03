@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Filters\ProjectFilter;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,6 +16,7 @@ class Project extends Model
 
     protected $fillable = [
         'name',
+        'description',
         'status',
     ];
 
@@ -21,7 +24,8 @@ class Project extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class);
+        return $this->belongsToMany(User::class)
+            ->withTimestamps();
     }
 
     public function timesheets(): HasMany
@@ -48,5 +52,10 @@ class Project extends Model
         }
         
         return $attribute;
+    }
+
+    public function scopeFilter(Builder $query, ProjectFilter $filter): Builder
+    {
+        return $filter->apply($query);
     }
 }

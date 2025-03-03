@@ -15,10 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('attribute_id')->constrained()->onDelete('cascade');
             $table->morphs('entity');
-            $table->text('value');
+            $table->string('value');
             $table->timestamps();
-
-            $table->unique(['attribute_id', 'entity_type', 'entity_id']);
         });
     }
 

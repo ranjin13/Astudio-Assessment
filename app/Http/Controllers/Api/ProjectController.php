@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Filters\ProjectFilter;
 use App\Http\Controllers\Controller;
 use App\Models\Attribute;
 use App\Models\Project;
@@ -9,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ProjectController extends Controller
 {
@@ -17,28 +19,21 @@ class ProjectController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, ProjectFilter $filter): JsonResponse
     {
         $query = Project::query();
+        
+        // Apply filters
+        $projects = $query->filter($filter)
+            ->with(['attributeValues.attribute'])
+            ->get();
 
-        // Only show projects the user is assigned to
-        $query->whereHas('users', function (Builder $q) use ($request) {
-            $q->where('users.id', $request->user()->id);
-        });
+        // Debug
+        Log::info('Projects query result', [
+            'count' => $projects->count(),
+            'filters' => $request->get('filters', [])
+        ]);
 
-        // Handle dynamic attribute filters
-        $attributes = Attribute::all();
-        foreach ($attributes as $attribute) {
-            if ($request->has($attribute->name)) {
-                $value = $request->input($attribute->name);
-                $query->whereHas('attributeValues', function (Builder $q) use ($attribute, $value) {
-                    $q->where('attribute_id', $attribute->id)
-                        ->where('value', 'like', "%{$value}%");
-                });
-            }
-        }
-
-        $projects = $query->with(['attributeValues.attribute'])->get();
         return response()->json($projects);
     }
 
@@ -51,7 +46,8 @@ class ProjectController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'status' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'status' => 'required|string|in:active,inactive,completed',
         ]);
 
         $project = Project::create($validated);
@@ -88,8 +84,9 @@ class ProjectController extends Controller
         $this->authorize('update', $project);
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'status' => 'required|string|max:255',
+            'name' => 'sometimes|required|string|max:255',
+            'description' => 'nullable|string',
+            'status' => 'sometimes|required|string|in:active,inactive,completed',
         ]);
 
         $project->update($validated);

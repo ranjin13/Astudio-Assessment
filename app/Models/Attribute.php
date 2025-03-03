@@ -27,7 +27,7 @@ class Attribute extends Model
         'select',
     ];
 
-    public function values(): HasMany
+    public function attributeValues(): HasMany
     {
         return $this->hasMany(AttributeValue::class);
     }
