@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Middleware\CacheResponse;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class ProjectController extends Controller
 {
@@ -165,23 +166,35 @@ class ProjectController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param Project $project
+     * @param int $id
      * @return JsonResponse
      */
-    public function show(Project $project): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
+            $project = Project::findOrFail($id);
             return response()->json(
                 new ProjectResource($project->load('attributeValues.attribute'))
             );
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Project with ID {$id} not found",
+                'error_code' => 'PROJECT_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             Log::error('Error fetching project', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'project_id' => $project->id
+                'project_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch project',
+                'error_code' => 'FETCH_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 
@@ -189,16 +202,18 @@ class ProjectController extends Controller
      * Update the specified resource in storage.
      *
      * @param ProjectRequest $request
-     * @param Project $project
+     * @param int $id
      * @return JsonResponse
      */
-    public function update(ProjectRequest $request, Project $project): JsonResponse
+    public function update(ProjectRequest $request, $id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
+            $project = Project::findOrFail($id);
+
             Log::info('Updating project with data:', [
-                'project_id' => $project->id,
+                'project_id' => $id,
                 'project_data' => $request->safe()->except('attributes'),
                 'has_attributes' => $request->has('attributes'),
                 'attributes' => $request->input('attributes')
@@ -259,7 +274,7 @@ class ProjectController extends Controller
             Log::info('Project updated successfully with ID: ' . $project->id);
 
             // Fresh load to ensure we get the latest data
-            $loadedProject = $project->fresh(['attributeValues.attribute']);
+            $loadedProject = $project->fresh(['attributeValues.attribute', 'users']);
             
             Log::info('Loaded project data:', [
                 'attribute_values_count' => $loadedProject->attributeValues->count(),
@@ -270,57 +285,82 @@ class ProjectController extends Controller
             CacheResponse::clearCache(request()->create(route('projects.index'), 'GET'));
             CacheResponse::clearCache(request()->create(route('projects.show', $project), 'GET'));
 
-            return response()->json(
-                new ProjectResource($loadedProject)
-            );
+            return response()->json(new ProjectResource($loadedProject));
+
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "Project with ID {$id} not found",
+                'error_code' => 'PROJECT_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error updating project', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'project_id' => $project->id,
+                'project_id' => $id,
                 'request_data' => $request->all(),
-                'validated_data' => $request->validated()
+                'validated_data' => $request->safe()->except(['attributes'])
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update project',
+                'error_code' => 'UPDATE_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 
     /**
      * Remove the specified resource from storage.
      *
-     * @param Project $project
+     * @param int $id
      * @return JsonResponse
      */
-    public function destroy(Project $project): JsonResponse
+    public function destroy($id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
-            $project->attributeValues()->delete();
+            $project = Project::findOrFail($id);
             $project->delete();
 
             DB::commit();
 
-            Log::info('Project deleted successfully..');
+            Log::info('Project deleted successfully', [
+                'project_id' => $id
+            ]);
 
             // Clear cache for both list and single project
             CacheResponse::clearCache(request()->create(route('projects.index'), 'GET'));
-            CacheResponse::clearCache(request()->create(route('projects.show', $project), 'GET'));
+            CacheResponse::clearCache(request()->create(route('projects.show', $id), 'GET'));
 
             return response()->json(null, 204);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "Project with ID {$id} not found",
+                'error_code' => 'PROJECT_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error deleting project', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'project_id' => $project->id
+                'project_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete project',
+                'error_code' => 'DELETE_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 }

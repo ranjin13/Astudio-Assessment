@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Throwable;
 use App\Http\Middleware\CacheResponse;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class AttributeController extends Controller
 {
@@ -97,87 +98,146 @@ class AttributeController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Attribute $attribute): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
-            return response()->json(
-                new AttributeResource($attribute)
-            );
+            $attribute = Attribute::findOrFail($id);
+            return response()->json(new AttributeResource($attribute));
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Attribute with ID {$id} not found",
+                'error_code' => 'ATTRIBUTE_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             Log::error('Error fetching attribute', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'attribute_id' => $attribute->id
+                'attribute_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch attribute',
+                'error_code' => 'FETCH_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(AttributeRequest $request, Attribute $attribute): JsonResponse
+    public function update(AttributeRequest $request, $id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
-            $attribute->update($request->validated());
+            $attribute = Attribute::findOrFail($id);
+            $data = $request->validated();
+
+            // Handle options field
+            if (isset($data['type'])) {
+                if ($data['type'] === 'select') {
+                    // Ensure options is an array
+                    $data['options'] = isset($data['options']) ? (array) $data['options'] : [];
+                } else {
+                    // For non-select types, set options to null
+                    $data['options'] = null;
+                }
+            }
+
+            $attribute->fill($data);
+            $attribute->save();
 
             DB::commit();
 
-            Log::info('Attribute updated successfully..');
+            Log::info('Attribute updated successfully', [
+                'attribute_id' => $id,
+                'updated_fields' => array_keys($data),
+                'data' => $data
+            ]);
 
             // Clear cache for both list and single attribute
             CacheResponse::clearCache(request()->create(route('attributes.index'), 'GET'));
-            CacheResponse::clearCache(request()->create(route('attributes.show', $attribute), 'GET'));
+            CacheResponse::clearCache(request()->create(route('attributes.show', $id), 'GET'));
 
-            return response()->json(
-                new AttributeResource($attribute)
-            );
+            return response()->json(new AttributeResource($attribute));
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "Attribute with ID {$id} not found",
+                'error_code' => 'ATTRIBUTE_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error updating attribute', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'attribute_id' => $attribute->id,
-                'data' => $request->validated()
+                'attribute_id' => $id,
+                'request_data' => $request->all(),
+                'validated_data' => $request->validated()
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update attribute',
+                'error_code' => 'UPDATE_FAILED',
+                'details' => config('app.debug') ? [
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine()
+                ] : null
+            ], 500);
         }
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Attribute $attribute): JsonResponse
+    public function destroy($id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
+            $attribute = Attribute::findOrFail($id);
             $attribute->delete();
 
             DB::commit();
 
-            Log::info('Attribute deleted successfully..');
+            Log::info('Attribute deleted successfully', [
+                'attribute_id' => $id
+            ]);
 
             // Clear cache for both list and single attribute
             CacheResponse::clearCache(request()->create(route('attributes.index'), 'GET'));
-            CacheResponse::clearCache(request()->create(route('attributes.show', $attribute), 'GET'));
+            CacheResponse::clearCache(request()->create(route('attributes.show', $id), 'GET'));
 
             return response()->json(null, 204);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "Attribute with ID {$id} not found",
+                'error_code' => 'ATTRIBUTE_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error deleting attribute', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'attribute_id' => $attribute->id
+                'attribute_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete attribute',
+                'error_code' => 'DELETE_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 }

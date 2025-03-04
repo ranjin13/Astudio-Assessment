@@ -30,16 +30,17 @@ class AttributeRequest extends FormRequest
         ];
 
         if ($this->isMethod('PUT') || $this->isMethod('PATCH')) {
-            $rules = collect($rules)->mapWithKeys(function ($value, $key) {
-                $value = $key === 'name' 
-                    ? array_merge(['sometimes'], array_map(function ($rule) {
-                        return $rule === 'unique:attributes,name' 
-                            ? 'unique:attributes,name,' . $this->attribute->id 
-                            : $rule;
-                    }, $value))
-                    : array_merge(['sometimes'], $value);
-                
-                return [$key => $value];
+            $attributeId = $this->route('id');
+            $rules = collect($rules)->mapWithKeys(function ($value, $key) use ($attributeId) {
+                if ($key === 'name') {
+                    return [$key => [
+                        'sometimes',
+                        'string',
+                        'max:255',
+                        Rule::unique('attributes')->ignore($attributeId)
+                    ]];
+                }
+                return [$key => array_merge(['sometimes'], $value)];
             })->toArray();
         }
 

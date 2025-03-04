@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Http\Middleware\CacheResponse;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Auth\Access\AuthorizationException;
 
 class TimesheetController extends Controller
 {
@@ -105,22 +107,44 @@ class TimesheetController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param Timesheet $timesheet
+     * @param int $id
      * @return JsonResponse
      */
-    public function show(Timesheet $timesheet): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
+            $timesheet = Timesheet::findOrFail($id);
             $this->authorize('view', $timesheet);
 
             return response()->json(
                 new TimesheetResource($timesheet)
             );
+        } catch (ModelNotFoundException $e) {
+            Log::error('Timesheet not found', [
+                'timesheet_id' => $id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Timesheet with ID {$id} not found",
+                'error_code' => 'TIMESHEET_NOT_FOUND'
+            ], 404);
+        } catch (AuthorizationException $e) {
+            Log::error('Unauthorized timesheet access attempt', [
+                'timesheet_id' => $id,
+                'user_id' => request()->user()->id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Access denied. You can only view your own timesheets.',
+                'error_code' => 'TIMESHEET_ACCESS_DENIED'
+            ], 403);
         } catch (Throwable $e) {
             Log::error('Error fetching timesheet', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'timesheet_id' => $timesheet->id
+                'timesheet_id' => $id
             ]);
 
             throw $e;
@@ -131,12 +155,13 @@ class TimesheetController extends Controller
      * Update the specified resource in storage.
      *
      * @param TimesheetRequest $request
-     * @param Timesheet $timesheet
+     * @param int $id
      * @return JsonResponse
      */
-    public function update(TimesheetRequest $request, Timesheet $timesheet): JsonResponse
+    public function update(TimesheetRequest $request, int $id): JsonResponse
     {
         try {
+            $timesheet = Timesheet::findOrFail($id);
             $this->authorize('update', $timesheet);
 
             DB::beginTransaction();
@@ -154,13 +179,35 @@ class TimesheetController extends Controller
             return response()->json(
                 new TimesheetResource($timesheet)
             );
+        } catch (ModelNotFoundException $e) {
+            Log::error('Timesheet not found', [
+                'timesheet_id' => $id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Timesheet with ID {$id} not found",
+                'error_code' => 'TIMESHEET_NOT_FOUND'
+            ], 404);
+        } catch (AuthorizationException $e) {
+            DB::rollBack();
+            Log::error('Unauthorized timesheet update attempt', [
+                'timesheet_id' => $id,
+                'user_id' => request()->user()->id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Access denied. You can only update your own timesheets.',
+                'error_code' => 'TIMESHEET_UPDATE_DENIED'
+            ], 403);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error updating timesheet', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'timesheet_id' => $timesheet->id,
+                'timesheet_id' => $id,
                 'data' => $request->validated()
             ]);
 
@@ -171,12 +218,13 @@ class TimesheetController extends Controller
     /**
      * Remove the specified resource from storage.
      *
-     * @param Timesheet $timesheet
+     * @param int $id
      * @return JsonResponse
      */
-    public function destroy(Timesheet $timesheet): JsonResponse
+    public function destroy(int $id): JsonResponse
     {
         try {
+            $timesheet = Timesheet::findOrFail($id);
             $this->authorize('delete', $timesheet);
 
             DB::beginTransaction();
@@ -192,13 +240,35 @@ class TimesheetController extends Controller
             CacheResponse::clearCache(request()->create(route('timesheets.show', $timesheet), 'GET'));
 
             return response()->json(null, 204);
+        } catch (ModelNotFoundException $e) {
+            Log::error('Timesheet not found', [
+                'timesheet_id' => $id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Timesheet with ID {$id} not found",
+                'error_code' => 'TIMESHEET_NOT_FOUND'
+            ], 404);
+        } catch (AuthorizationException $e) {
+            DB::rollBack();
+            Log::error('Unauthorized timesheet deletion attempt', [
+                'timesheet_id' => $id,
+                'user_id' => request()->user()->id
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Access denied. You can only delete your own timesheets.',
+                'error_code' => 'TIMESHEET_DELETE_DENIED'
+            ], 403);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error deleting timesheet', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'timesheet_id' => $timesheet->id
+                'timesheet_id' => $id
             ]);
 
             throw $e;

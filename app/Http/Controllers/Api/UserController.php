@@ -15,6 +15,8 @@ use Throwable;
 use App\Helper\ApiResponse;
 use Illuminate\Http\Request;
 use App\Http\Middleware\CacheResponse;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class UserController extends Controller
 {
@@ -101,23 +103,16 @@ class UserController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param User $user
+     * @param int $id
      * @return JsonResponse
      */
-    public function show(User $user): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
-            return response()->json(
-                new UserResource($user)
-            );
-        } catch (Throwable $e) {
-            Log::error('Error fetching user', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => $user->id
-            ]);
-
-            throw $e;
+            $user = User::findOrFail($id);
+            return response()->json(new UserResource($user));
+        } catch (ModelNotFoundException $e) {
+            throw new ModelNotFoundException("User with ID {$id} not found");
         }
     }
 
@@ -125,84 +120,111 @@ class UserController extends Controller
      * Update the specified resource in storage.
      *
      * @param UserRequest $request
-     * @param User $user
+     * @param int $id
      * @return JsonResponse
      */
-    public function update(UserRequest $request, User $user): JsonResponse
+    public function update(UserRequest $request, $id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
-            $data = $request->safe()->except(['password']);
-            
-            if ($request->filled('password')) {
-                $data['password'] = Hash::make($request->password);
+            $user = User::findOrFail($id);
+            $data = $request->validated();
+
+            // Remove password field if it's empty
+            if (empty($data['password'])) {
+                unset($data['password']);
+            } else {
+                $data['password'] = Hash::make($data['password']);
             }
 
-            $user->update($data);
+            $user->fill($data);
+            $user->save();
 
             DB::commit();
 
             Log::info('User updated successfully', [
                 'user_id' => $user->id,
-                'email' => $user->email,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name
+                'updated_fields' => array_keys($data)
             ]);
 
             // Clear cache for both list and single user
             CacheResponse::clearCache(request()->create(route('users.index'), 'GET'));
             CacheResponse::clearCache(request()->create(route('users.show', $user), 'GET'));
 
-            return response()->json(
-                new UserResource($user)
-            );
+            return response()->json(new UserResource($user));
+
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "User with ID {$id} not found",
+                'error_code' => 'USER_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
-
             Log::error('Error updating user', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => $user->id,
-                'data' => $request->safe()->except(['password'])
+                'user_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update user',
+                'error_code' => 'UPDATE_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 
     /**
      * Remove the specified resource from storage.
      *
-     * @param User $user
+     * @param int $id
      * @return JsonResponse
      */
-    public function destroy(User $user): JsonResponse
+    public function destroy($id): JsonResponse
     {
         try {
             DB::beginTransaction();
 
+            $user = User::findOrFail($id);
             $user->delete();
 
             DB::commit();
 
-            Log::info('User deleted successfully..');
+            Log::info('User deleted successfully', [
+                'user_id' => $id
+            ]);
 
             // Clear cache for both list and single user
             CacheResponse::clearCache(request()->create(route('users.index'), 'GET'));
-            CacheResponse::clearCache(request()->create(route('users.show', $user), 'GET'));
+            CacheResponse::clearCache(request()->create(route('users.show', $id), 'GET'));
 
             return response()->json(null, 204);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => "User with ID {$id} not found",
+                'error_code' => 'USER_NOT_FOUND'
+            ], 404);
         } catch (Throwable $e) {
             DB::rollBack();
 
             Log::error('Error deleting user', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => $user->id
+                'user_id' => $id
             ]);
 
-            throw $e;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete user',
+                'error_code' => 'DELETE_FAILED',
+                'details' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
     }
 } 

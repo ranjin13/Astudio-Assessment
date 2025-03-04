@@ -22,31 +22,30 @@ class UserRequest extends FormRequest
      */
     public function rules(): array
     {
-        $rules = [
-            'first_name' => ['required', 'string', 'max:255'],
-            'last_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', Password::defaults(), 'confirmed'],
-        ];
-
-        if ($this->isMethod('PUT') || $this->isMethod('PATCH')) {
-            $rules = collect($rules)->mapWithKeys(function ($value, $key) {
-                $value = $key === 'email' 
-                    ? array_merge(['sometimes'], array_map(function ($rule) {
-                        return $rule === 'unique:users,email' 
-                            ? 'unique:users,email,' . $this->user->id 
-                            : $rule;
-                    }, $value))
-                    : array_merge(['sometimes'], $value);
-                
-                return [$key => $value];
-            })->toArray();
-
-            // Make password optional on update
-            $rules['password'] = ['sometimes', Password::defaults(), 'confirmed'];
+        // Rules for creating a new user
+        if ($this->isMethod('POST')) {
+            return [
+                'first_name' => ['required', 'string', 'max:255'],
+                'last_name' => ['required', 'string', 'max:255'],
+                'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+                'password' => ['required', Password::defaults(), 'confirmed'],
+            ];
         }
 
-        return $rules;
+        // Rules for updating a user
+        $userId = $this->route('id'); // Get the ID from the route parameter
+        return [
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'email' => [
+                'sometimes',
+                'string', 
+                'email', 
+                'max:255', 
+                'unique:users,email,' . $userId
+            ],
+            'password' => ['sometimes', 'nullable', Password::defaults()],
+        ];
     }
 
     /**
@@ -66,8 +65,7 @@ class UserRequest extends FormRequest
             'email.required' => 'The email field is required.',
             'email.email' => 'Please provide a valid email address.',
             'email.unique' => 'This email is already registered.',
-            'password.required' => 'The password field is required.',
-            'password.confirmed' => 'The password confirmation does not match.',
+            'password.required' => 'The password field is required.'
         ];
     }
 } 

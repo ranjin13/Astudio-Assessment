@@ -124,29 +124,14 @@ class ProjectRequest extends FormRequest
     }
 
     /**
-     * Check if we're updating date attributes
-     */
-    private function isUpdatingDates(): bool
-    {
-        $attributes = $this->input('attributes', []);
-        $dateAttributes = ['Start Date', 'End Date'];
-        
-        foreach ($attributes as $attribute) {
-            $dbAttribute = Attribute::find($attribute['attribute_id'] ?? null);
-            if ($dbAttribute && in_array($dbAttribute->name, $dateAttributes)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-
-    /**
      * Add date comparison rules for updates
      */
     private function addDateComparisonRules(array &$rules): void
     {
-        if (!$this->project) {
+        $id = $this->route('id');
+        $project = \App\Models\Project::find($id);
+        
+        if (!$project) {
             return;
         }
 
@@ -158,11 +143,11 @@ class ProjectRequest extends FormRequest
         }
 
         // Get existing date values
-        $existingStartDate = $this->project->attributeValues()
+        $existingStartDate = $project->attributeValues()
             ->where('attribute_id', $startDateAttr->id)
             ->value('value');
             
-        $existingEndDate = $this->project->attributeValues()
+        $existingEndDate = $project->attributeValues()
             ->where('attribute_id', $endDateAttr->id)
             ->value('value');
 
@@ -190,5 +175,23 @@ class ProjectRequest extends FormRequest
                 $rules["attributes.{$endDateIndex}.value"][] = "after:{$compareToDate}";
             }
         }
+    }
+
+    /**
+     * Check if we're updating date attributes
+     */
+    private function isUpdatingDates(): bool
+    {
+        $attributes = $this->input('attributes', []);
+        $dateAttributes = ['Start Date', 'End Date'];
+        
+        foreach ($attributes as $attribute) {
+            $dbAttribute = Attribute::find($attribute['attribute_id'] ?? null);
+            if ($dbAttribute && in_array($dbAttribute->name, $dateAttributes)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 } 
