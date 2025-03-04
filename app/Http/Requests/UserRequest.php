@@ -33,7 +33,9 @@ class UserRequest extends FormRequest
         }
 
         // Rules for updating a user
-        $userId = $this->route('id'); // Get the ID from the route parameter
+        // Get the ID from the route parameter - could be 'id' or 'user' depending on the route
+        $userId = $this->route('user') ?? $this->route('id');
+        
         return [
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
