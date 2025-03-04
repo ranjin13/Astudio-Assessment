@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Throwable;
+use App\Http\Middleware\CacheResponse;
 
 class AttributeController extends Controller
 {
@@ -73,6 +74,9 @@ class AttributeController extends Controller
 
             Log::info('Attribute created successfully..');
 
+            // Clear cache for attributes list
+            CacheResponse::clearCache(request()->create(route('attributes.index'), 'GET'));
+
             return response()->json(
                 new AttributeResource($attribute),
                 201
@@ -124,6 +128,10 @@ class AttributeController extends Controller
 
             Log::info('Attribute updated successfully..');
 
+            // Clear cache for both list and single attribute
+            CacheResponse::clearCache(request()->create(route('attributes.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('attributes.show', $attribute), 'GET'));
+
             return response()->json(
                 new AttributeResource($attribute)
             );
@@ -154,6 +162,10 @@ class AttributeController extends Controller
             DB::commit();
 
             Log::info('Attribute deleted successfully..');
+
+            // Clear cache for both list and single attribute
+            CacheResponse::clearCache(request()->create(route('attributes.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('attributes.show', $attribute), 'GET'));
 
             return response()->json(null, 204);
         } catch (Throwable $e) {

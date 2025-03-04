@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Helper\ApiResponse;
 use Illuminate\Http\Request;
+use App\Http\Middleware\CacheResponse;
 
 class UserController extends Controller
 {
@@ -76,6 +77,9 @@ class UserController extends Controller
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name
             ]);
+
+            // Clear cache for users list
+            CacheResponse::clearCache(request()->create(route('users.index'), 'GET'));
 
             return response()->json(
                 new UserResource($user),
@@ -146,6 +150,10 @@ class UserController extends Controller
                 'last_name' => $user->last_name
             ]);
 
+            // Clear cache for both list and single user
+            CacheResponse::clearCache(request()->create(route('users.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('users.show', $user), 'GET'));
+
             return response()->json(
                 new UserResource($user)
             );
@@ -179,6 +187,10 @@ class UserController extends Controller
             DB::commit();
 
             Log::info('User deleted successfully..');
+
+            // Clear cache for both list and single user
+            CacheResponse::clearCache(request()->create(route('users.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('users.show', $user), 'GET'));
 
             return response()->json(null, 204);
         } catch (Throwable $e) {

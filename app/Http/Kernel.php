@@ -14,7 +14,12 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
-        //
+        // \App\Http\Middleware\TrustHosts::class,
+        \Illuminate\Http\Middleware\TrustProxies::class,
+        \Illuminate\Http\Middleware\HandleCors::class,
+        \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
+        \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        \Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
     ];
 
     /**
@@ -24,11 +29,22 @@ class Kernel extends HttpKernel
      */
     protected $middlewareGroups = [
         'web' => [
-            // Web middleware group
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
+            \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
         ],
 
         'api' => [
-            // API middleware group
+            \App\Http\Middleware\JsonApiMiddleware::class,
+            \Illuminate\Http\Middleware\HandleCors::class,
+            \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
+            \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\CacheResponse::class,
+            'throttle:api',
         ],
     ];
 

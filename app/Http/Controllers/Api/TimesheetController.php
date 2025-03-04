@@ -14,6 +14,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
+use App\Http\Middleware\CacheResponse;
 
 class TimesheetController extends Controller
 {
@@ -81,6 +82,9 @@ class TimesheetController extends Controller
 
             Log::info('Timesheet created successfully with ID: ' . $timesheet->id);
 
+            // Clear cache for timesheets list
+            CacheResponse::clearCache(request()->create(route('timesheets.index'), 'GET'));
+
             return response()->json(
                 new TimesheetResource($timesheet),
                 201
@@ -143,6 +147,10 @@ class TimesheetController extends Controller
 
             Log::info('Timesheet updated successfully with ID: ' . $timesheet->id);
 
+            // Clear cache for both list and single timesheet
+            CacheResponse::clearCache(request()->create(route('timesheets.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('timesheets.show', $timesheet), 'GET'));
+
             return response()->json(
                 new TimesheetResource($timesheet)
             );
@@ -178,6 +186,10 @@ class TimesheetController extends Controller
             DB::commit();
 
             Log::info('Timesheet deleted successfully with ID: ' . $timesheet->id);
+
+            // Clear cache for both list and single timesheet
+            CacheResponse::clearCache(request()->create(route('timesheets.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('timesheets.show', $timesheet), 'GET'));
 
             return response()->json(null, 204);
         } catch (Throwable $e) {

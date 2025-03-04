@@ -27,14 +27,17 @@ class AuthController extends Controller
     public function register(RegisterRequest $request): JsonResponse
     {
         try {
+            // Validate request - this will throw ValidationException if validation fails
+            $validated = $request->validated();
+
             DB::beginTransaction();
 
             // Create the user
             $user = User::create([
-                'first_name' => $request->first_name,
-                'last_name' => $request->last_name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
             ]);
 
             // Create a personal access token
@@ -49,27 +52,29 @@ class AuthController extends Controller
 
             DB::commit();
 
-            Log::info('User updated successfully', [
+            Log::info('User registered successfully', [
                 'user_id' => $user->id,
-                'email' => $user->email,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name
+                'email' => $user->email
             ]);
 
             return response()->json(
                 new RegisterResource($user),
                 201
             );
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (Throwable $e) {
             DB::rollBack();
-
             Log::error('Registration failed', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'data' => $request->safe()->except(['password'])
+                'trace' => $e->getTraceAsString()
             ]);
 
-            throw $e;
+            return response()->json([
+                'message' => 'Registration failed',
+                'errors' => ['general' => [$e->getMessage()]]
+            ], 422);
         }
     }
 

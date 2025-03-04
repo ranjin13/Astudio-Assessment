@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Middleware\CacheResponse;
 
 class ProjectController extends Controller
 {
@@ -140,6 +141,9 @@ class ProjectController extends Controller
                 'users' => $loadedProject->users->pluck('id')->toArray()
             ]);
 
+            // Clear cache for projects list
+            CacheResponse::clearCache(request()->create(route('projects.index'), 'GET'));
+
             return response()->json(
                 new ProjectResource($loadedProject),
                 201
@@ -262,6 +266,10 @@ class ProjectController extends Controller
                 'attribute_values' => $loadedProject->attributeValues->toArray()
             ]);
 
+            // Clear cache for both list and single project
+            CacheResponse::clearCache(request()->create(route('projects.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('projects.show', $project), 'GET'));
+
             return response()->json(
                 new ProjectResource($loadedProject)
             );
@@ -297,6 +305,10 @@ class ProjectController extends Controller
             DB::commit();
 
             Log::info('Project deleted successfully..');
+
+            // Clear cache for both list and single project
+            CacheResponse::clearCache(request()->create(route('projects.index'), 'GET'));
+            CacheResponse::clearCache(request()->create(route('projects.show', $project), 'GET'));
 
             return response()->json(null, 204);
         } catch (Throwable $e) {
