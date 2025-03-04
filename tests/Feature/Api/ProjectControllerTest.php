@@ -566,4 +566,136 @@ class ProjectControllerTest extends TestCase
         // Check that the returned project has the correct name
         $this->assertEquals('Project with High Priority', $responseData['data'][0]['name']);
     }
+
+    #[Test]
+    public function it_can_filter_projects_by_multiple_attributes()
+    {
+        // Create test attributes with unique names
+        $priorityAttribute = Attribute::create([
+            'name' => 'Test Priority ' . uniqid(),
+            'type' => 'select',
+            'options' => ['High', 'Medium', 'Low']
+        ]);
+
+        $startDateAttribute = Attribute::create([
+            'name' => 'Test Start Date ' . uniqid(),
+            'type' => 'date'
+        ]);
+
+        $budgetAttribute = Attribute::create([
+            'name' => 'Test Budget ' . uniqid(),
+            'type' => 'text'
+        ]);
+
+        // Create projects with different attribute combinations
+        $project1 = Project::create([
+            'name' => 'High Priority Project',
+            'status' => 'active'
+        ]);
+        $project1->users()->attach($this->user->id);
+        $project1->attributeValues()->createMany([
+            ['attribute_id' => $priorityAttribute->id, 'value' => 'High'],
+            ['attribute_id' => $startDateAttribute->id, 'value' => '2025-03-01'],
+            ['attribute_id' => $budgetAttribute->id, 'value' => '50000']
+        ]);
+
+        $project2 = Project::create([
+            'name' => 'Medium Priority Project',
+            'status' => 'active'
+        ]);
+        $project2->users()->attach($this->user->id);
+        $project2->attributeValues()->createMany([
+            ['attribute_id' => $priorityAttribute->id, 'value' => 'Medium'],
+            ['attribute_id' => $startDateAttribute->id, 'value' => '2025-03-15'],
+            ['attribute_id' => $budgetAttribute->id, 'value' => '75000']
+        ]);
+
+        $project3 = Project::create([
+            'name' => 'Low Priority Project',
+            'status' => 'on-hold'
+        ]);
+        $project3->users()->attach($this->user->id);
+        $project3->attributeValues()->createMany([
+            ['attribute_id' => $priorityAttribute->id, 'value' => 'Low'],
+            ['attribute_id' => $startDateAttribute->id, 'value' => '2025-04-01'],
+            ['attribute_id' => $budgetAttribute->id, 'value' => '100000']
+        ]);
+
+        // Test 1: Filter by status and priority
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[status]=active&filters[' . $priorityAttribute->name . ']=High');
+
+        $response->assertStatus(200);
+        $responseData = $response->json();
+        $this->assertCount(1, $responseData['data']);
+        $this->assertEquals('High Priority Project', $responseData['data'][0]['name']);
+
+        // Test 2: Filter by date using supported operators
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[' . $startDateAttribute->name . ']=<:2025-03-20');
+
+        $response->assertStatus(200);
+        $responseData = $response->json();
+        $this->assertCount(2, $responseData['data']);
+        $this->assertContains('High Priority Project', collect($responseData['data'])->pluck('name'));
+        $this->assertContains('Medium Priority Project', collect($responseData['data'])->pluck('name'));
+
+        // Test 3: Filter by budget with LIKE operator
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[' . $budgetAttribute->name . ']=50000');
+
+        $response->assertStatus(200);
+        $responseData = $response->json();
+        $this->assertCount(1, $responseData['data']);
+        $this->assertEquals('High Priority Project', $responseData['data'][0]['name']);
+
+        // Test 4: Combine all filters
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[status]=active&filters[' . $priorityAttribute->name . ']=High&filters[' . $startDateAttribute->name . ']=<:2025-03-22&filters[' . $budgetAttribute->name . ']=50000');
+
+        $response->assertStatus(200);
+        $responseData = $response->json();
+        $this->assertCount(1, $responseData['data']);
+        $this->assertEquals('High Priority Project', $responseData['data'][0]['name']);
+    }
+
+    #[Test]
+    public function it_validates_filter_operators()
+    {
+        // Test invalid operator
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[name]=INVALID:Test');
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'message' => 'Invalid filter parameters',
+                'errors' => [
+                    'name' => 'Invalid operator: INVALID'
+                ]
+            ]);
+
+        // Test invalid date format
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/projects?filters[Start Date]=invalid-date');
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'message' => 'Invalid filter parameters',
+                'errors' => [
+                    'Start Date' => 'Invalid date format'
+                ]
+            ]);
+    }
 } 

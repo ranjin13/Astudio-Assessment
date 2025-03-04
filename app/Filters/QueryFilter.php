@@ -5,6 +5,7 @@ namespace App\Filters;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 abstract class QueryFilter
 {
@@ -21,7 +22,7 @@ abstract class QueryFilter
     /**
      * @var array
      */
-    protected array $operators = ['=', '>', '<', 'LIKE', 'ILIKE'];
+    protected array $operators = ['=', '>', '<', '>=', '<=', 'LIKE', 'ILIKE'];
 
     /**
      * Constructor
@@ -73,6 +74,15 @@ abstract class QueryFilter
         // Handle LIKE operator wildcards
         if ($operator === 'LIKE' && !Str::contains($value, '%')) {
             $value = "%{$value}%";
+        }
+
+        // Handle date operators
+        if (in_array($operator, ['>', '<'])) {
+            try {
+                Carbon::parse($value);
+            } catch (\Exception $e) {
+                $operator = '=';
+            }
         }
 
         return [$operator, $value];

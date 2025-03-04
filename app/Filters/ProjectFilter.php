@@ -108,7 +108,13 @@ class ProjectFilter extends QueryFilter
         }
 
         try {
-            $date = Carbon::parse($value)->toDateString();
+            $date = Carbon::parse($value)->format('Y-m-d');
+            
+            // Ensure the operator is one of the supported ones
+            if (!in_array($operator, ['=', '>', '<', '>=', '<='])) {
+                $operator = '=';
+            }
+            
             $this->builder->whereDate($field, $operator, $date);
 
             Log::info('Date filter applied', [
@@ -160,7 +166,7 @@ class ProjectFilter extends QueryFilter
         // Special handling for date attributes
         if ($attribute->type === 'date' && !empty($value)) {
             try {
-                $value = Carbon::parse($value)->toDateString();
+                $value = Carbon::parse($value)->format('Y-m-d');
                 Log::info('Parsed date value for EAV filter', [
                     'attribute' => $attribute->name,
                     'original' => $value,
@@ -176,11 +182,20 @@ class ProjectFilter extends QueryFilter
             }
         }
 
-        $this->eavFilters[] = [
-            'attribute' => $attribute,
-            'operator' => $operator,
-            'value' => $value
-        ];
+        // Handle operator format
+        if (in_array($operator, ['>', '<', '>=', '<=', '='])) {
+            $this->eavFilters[] = [
+                'attribute' => $attribute,
+                'operator' => $operator,
+                'value' => $value
+            ];
+        } else {
+            $this->eavFilters[] = [
+                'attribute' => $attribute,
+                'operator' => '=',
+                'value' => $value
+            ];
+        }
     }
 
     /**
@@ -205,18 +220,43 @@ class ProjectFilter extends QueryFilter
                     } else if ($filter['attribute']->type === 'select') {
                         $subQuery->whereRaw('LOWER(value) ' . $filter['operator'] . ' ?', [strtolower($filter['value'])]);
                     } else if ($filter['attribute']->type === 'date') {
-                        // Special handling for date comparisons
-                        $subQuery->whereRaw("CAST(value AS DATE) {$filter['operator']} ?", [$filter['value']]);
+                        // Handle date comparison with proper format and operator
+                        $operator = $filter['operator'];
+                        
+                        if ($operator === 'LIKE') {
+                            // Handle partial date match for year and month
+                            $subQuery->whereRaw("DATE_FORMAT(value, '%Y-%m') LIKE ?", ['%' . $filter['value'] . '%']);
+                        } else {
+                            $date = Carbon::parse($filter['value'])->format('Y-m-d');
+                            
+                            // Ensure the operator is one of the supported ones
+                            if (!in_array($operator, ['=', '>', '<', '>=', '<='])) {
+                                $operator = '=';
+                            }
+                            
+                            $subQuery->whereRaw("CAST(value AS DATE) {$operator} ?", [$date]);
+                        }
                         
                         Log::info('Applied date filter', [
                             'attribute' => $filter['attribute']->name,
-                            'operator' => $filter['operator'],
-                            'value' => $filter['value']
+                            'operator' => $operator,
+                            'value' => $filter['value'],
+                            'sql' => $subQuery->toSql(),
+                            'bindings' => $subQuery->getBindings()
                         ]);
                     } else {
                         $subQuery->where('value', $filter['operator'], $filter['value']);
                     }
+
+                    Log::info('Subquery SQL', [
+                        'sql' => $subQuery->toSql(),
+                        'bindings' => $subQuery->getBindings()
+                    ]);
                 });
+                Log::info('Main query SQL', [
+                    'sql' => $query->toSql(),
+                    'bindings' => $query->getBindings()
+                ]);
             }
         });
 
@@ -259,14 +299,16 @@ class ProjectFilter extends QueryFilter
                     $this->addEavFilter($attribute, '=', null);
                 } else {
                     [$operator, $filterValue] = $this->parseOperator($value);
-
-                    if ($operator === '=' || $operator === 'LIKE') {
-                        $operator = 'ILIKE';
-                        if (!Str::contains($filterValue, '%')) {
-                            $filterValue = "%{$filterValue}%";
+                    
+                    // Handle date operators
+                    if ($attribute->type === 'date' && in_array($operator, ['>', '<'])) {
+                        try {
+                            Carbon::parse($filterValue);
+                        } catch (\Exception $e) {
+                            $operator = '=';
                         }
                     }
-
+                    
                     $this->addEavFilter($attribute, $operator, $filterValue);
                 }
             }

@@ -120,14 +120,14 @@ class FilterValidator
         }
 
         // Extract actual value if operator is present
-        if (Str::contains($value, ':')) {
+        if (is_string($value) && Str::contains($value, ':')) {
             [, $value] = explode(':', $value, 2);
         }
 
         try {
             Carbon::parse($value);
         } catch (\Exception $e) {
-            throw new \Exception('Invalid date format');
+            throw new \Exception("Invalid date format: {$value}");
         }
     }
 
