@@ -43,7 +43,7 @@ class TimesheetControllerTest extends TestCase
         $this->timesheet = Timesheet::create([
             'user_id' => $this->user->id,
             'project_id' => $this->project->id,
-            'date' => now()->format('Y-m-d'),
+            'date' => '2025-03-15', // Set a fixed date after March 10, 2025
             'hours' => 8.5,
             'task_name' => 'Test Task'
         ]);
@@ -236,7 +236,7 @@ class TimesheetControllerTest extends TestCase
         $response = $this->withHeaders([
             'Authorization' => 'Bearer ' . $this->token,
             'Accept' => 'application/json'
-        ])->get("/api/timesheets?filters[date]=$date");
+        ])->get("/api/timesheets?filters[date]=>:2025-03-10");
 
         $response->assertStatus(200)
             ->assertJsonStructure([

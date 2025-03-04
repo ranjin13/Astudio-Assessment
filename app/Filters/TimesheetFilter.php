@@ -92,6 +92,11 @@ class TimesheetFilter extends QueryFilter
         try {
             $date = Carbon::parse($value)->toDateString();
             
+            // Ensure the operator is one of the supported ones
+            if (!in_array($operator, ['=', '>', '<', '>=', '<='])) {
+                $operator = '=';
+            }
+            
             Log::info('Applying date filter', [
                 'field' => $field,
                 'operator' => $operator,
